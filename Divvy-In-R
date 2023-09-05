@@ -1,0 +1,141 @@
+# Load required packages if not already installed
+required_packages <- c("tidyverse", "lubridate", "data.table")
+
+for (package in required_packages) {
+  if (!requireNamespace(package, quietly = TRUE)) {
+    install.packages(package)
+  }
+}
+
+# Load required packages
+library(tidyverse)
+library(lubridate)
+library(data.table)
+
+# Create a list of file paths for CSV files
+file_paths <- list.files(pattern = "-divvy-tripdata.csv")
+
+# Load and combine CSV files
+bike_df <- lapply(file_paths, function(file) {
+  df <- read.csv(file)
+  df$day_of_week <- as.character(df$day_of_week)  # Convert day_of_week to character
+  return(df)
+}) %>%
+  bind_rows()
+
+# Convert date-time columns to POSIXct format
+bike_df$ended_at <- as.POSIXct(bike_df$ended_at, format = "%Y-%m-%d %H:%M:%S")
+bike_df$started_at <- as.POSIXct(bike_df$started_at, format = "%Y-%m-%d %H:%M:%S")
+
+# Calculate ride length column
+bike_df$ride_length <- difftime(bike_df$ended_at, bike_df$started_at, units = "mins")
+
+# Extract date components
+bike_df <- bike_df %>%
+  mutate(
+    date = as.Date(started_at),
+    day_of_week = wday(started_at),
+    month = format(date, "%m"),
+    day = format(date, "%d"),
+    year = format(date, "%y"),
+    start_time = format(started_at, format = "%H:%M:%S"),
+    start_hour = hour(started_at)
+  )
+
+# Create columns for different seasons of the year
+bike_df <- bike_df %>%
+  mutate(
+    season = case_when(
+      month %in% c("01", "02", "12") ~ "Winter",
+      month %in% c("03", "04", "05") ~ "Spring",
+      month %in% c("06", "07", "08") ~ "Summer",
+      month %in% c("09", "10", "11") ~ "Autumn"
+    )
+  )
+
+# Create columns for different times of day
+bike_df <- bike_df %>%
+  mutate(
+    time_of_day = case_when(
+      start_hour %in% 0:5 ~ "Night",
+      start_hour %in% 6:11 ~ "Morning",
+      start_hour %in% 12:15 ~ "Afternoon",
+      start_hour %in% 16:19 ~ "Evening",
+      start_hour %in% 20:23 ~ "Night"
+    )
+  )
+
+# Create column for each month
+bike_df <- bike_df %>%
+  mutate(
+    month_name = month.abb[as.integer(month)]
+  )
+
+# Remove unnecessary columns
+columns_to_remove <- c(
+  "ride_id", "started_at", "ended_at", "start_station_id", "start_station_name",
+  "end_station_id", "end_station_name", "start_lat", "start_lng", "end_lat", "end_lng"
+)
+
+bike_df <- bike_df %>%
+  select(-any_of(columns_to_remove)) %>%
+  distinct()
+
+# Total Rides
+total_rides <- nrow(bike_df)
+
+# Rides by Member Type
+rides_by_member_type <- bike_df %>%
+  group_by(member_casual) %>%
+  count()
+
+# Rides by Bike Type
+rides_by_bike_type <- bike_df %>%
+  group_by(rideable_type) %>%
+  count()
+
+# Rides by Day of Week
+rides_by_day_of_week <- bike_df %>%
+  group_by(member_casual, day_of_week) %>%
+  count()
+
+# Rides by Month
+rides_by_month <- bike_df %>%
+  group_by(member_casual, month) %>%
+  count()
+
+# Rides by Day of Month
+rides_by_day <- bike_df %>%
+  group_by(member_casual, day) %>%
+  count()
+
+# Rides by Hour
+rides_by_hour <- bike_df %>%
+  group_by(member_casual, start_hour) %>%
+  count()
+
+# Rides by Time of Day
+rides_by_time_of_day <- bike_df %>%
+  group_by(member_casual, time_of_day) %>%
+  count()
+
+# Rides by Season
+rides_by_season <- bike_df %>%
+  group_by(member_casual, season) %>%
+  count()
+
+# Average Ride Length
+average_ride_length <- mean(bike_df$ride_length, na.rm = TRUE)
+
+# Average Ride Length by Member Type
+average_ride_length_by_member <- bike_df %>%
+  group_by(member_casual) %>%
+  summarise(average_ride_length = mean(ride_length, na.rm = TRUE))
+
+# Average Ride Length by Bike Type
+average_ride_length_by_bike <- bike_df %>%
+  group_by(rideable_type) %>%
+  summarise(average_ride_length = mean(ride_length, na.rm = TRUE))
+
+# Write data frame to a CSV file
+write.csv(bike_df, "bike_data.csv", row.names = FALSE)
